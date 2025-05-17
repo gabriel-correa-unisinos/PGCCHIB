@@ -103,6 +103,7 @@ int main()
 	// Fazendo o registro da função de callback para a janela GLFW
 	glfwSetKeyCallback(window, key_callback);
 	glfwSetMouseButtonCallback(window, mouse_button_callback);
+	
 
 	// GLAD: carrega todos os ponteiros d funções da OpenGL
 	if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
@@ -385,11 +386,12 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
     {
 		double xpos, ypos;
 		glfwGetCursorPos(window, &xpos, &ypos);
-		cout << xpos << "  " << ypos << endl;
+		//cout << xpos << "  " << ypos << endl;
 
 		Triangle tri;
 		tri.position = vec3(xpos,ypos,0.0);
-		tri.dimensions = vec3(100.0,100.0,1.0);
+  		tri.dimensions = vec3(100.0,100.0,1.0);
+
 		tri.color = vec3(colors[iColor].r, colors[iColor].g, colors[iColor].b);
 		iColor = (iColor + 1) % colors.size();
 		triangles.push_back(tri);
