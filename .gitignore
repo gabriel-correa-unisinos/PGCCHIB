@@ -20,7 +20,7 @@ _build/
 _deps/
 glfw-src/
 glfw-build/
-
+.build
 # Ignorar configurações específicas do VSCode
 .vscode/
 CMakeUserPresets.json
