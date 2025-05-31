@@ -57,6 +57,9 @@ set(EXERCISES
     Modulo2/Ex1Parte2M2
     Modulo2/Ex1Parte3M2
     Modulo3/M3JogoCores
+    AplicacaodeTransformacao/Ex1
+    AplicacaodeTransformacao/Ex2
+    AplicacaodeTransformacao/Ex3
 )
 
 add_compile_options(-Wno-pragmas)
