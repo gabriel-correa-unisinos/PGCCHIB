@@ -191,12 +191,12 @@ int main()
         if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS)
         {
             xPos += 0.02f;
-            bgPos += 0.0005f;
+            bgPos += 0.002f;
         }
         if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS)
         {
             xPos -= 0.02f;
-            bgPos -= 0.0005f;
+            bgPos -= 0.002f;
         }
 
         // Atualiza offset da textura de fundo (repeat infinito)
@@ -216,15 +216,12 @@ int main()
         glLineWidth(10);
         glPointSize(20);
 
+        glUniform2f(glGetUniformLocation(shaderID, "tex_offset"), bgPos, 0.0f);
         glBindVertexArray(backgroundVAO); // Conectando ao buffer de geometria
         glBindTexture(GL_TEXTURE_2D, bgTexID);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-        glBindTexture(GL_TEXTURE_2D, texID); // Conectando ao buffer de textura
 
         glUniform2f(glGetUniformLocation(shaderID, "tex_offset"), xPos, 0.0f);
-
-        // Chamada de desenho - drawcall
-        // Poligono Preenchido - GL_TRIANGLES
         glBindVertexArray(personagemVAO);
         glBindTexture(GL_TEXTURE_2D, texID);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
