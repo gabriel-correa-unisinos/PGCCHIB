@@ -77,10 +77,10 @@ struct TriangleVertices
 	vec3 v0, v1, v2;
 	vec3 color;
 	GLuint VAO;
-    GLuint VBO;
+	GLuint VBO;
 };
 
-vector<vec3> tempVertices; // Armazena cliques até formar um triângulo
+vector<vec3> tempVertices;
 vector<TriangleVertices> triangles;
 int iColor = 0;
 
@@ -161,14 +161,6 @@ int main()
 
 	GLuint VAO = createTriangle(-0.5, -0.5, 0.5, -0.5, 0.0, 0.5);
 
-	TriangleVertices tri;
-	tri.v0 = vec3(100.0f, 100.0f, 0.0f);
-	tri.v1 = vec3(200.0f, 100.0f, 0.0f);
-	tri.v2 = vec3(150.0f, 200.0f, 0.0f);
-	tri.color = colors[iColor];
-	iColor = (iColor + 1) % colors.size();
-	triangles.push_back(tri);
-
 	glUseProgram(shaderID);
 
 	// Enviando a cor desejada (vec4) para o fragment shader
@@ -188,8 +180,25 @@ int main()
 		glfwPollEvents();
 
 		// Limpa o buffer de cor
-		glClearColor(0.0f, 0.0f, 0.0f, 1.0f); // cor de fundo
+		glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+		// Limpar a tela
 		glClear(GL_COLOR_BUFFER_BIT);
+
+		// Usar o shader program
+		glUseProgram(shaderID);
+
+		// Para cada triângulo, desenhá-lo
+		for (const TriangleVertices &tri : triangles)
+		{
+			glBindVertexArray(tri.VAO);
+			glDrawArrays(GL_TRIANGLES, 0, 3);
+		}
+
+		// Desvincular o VAO por segurança
+		glBindVertexArray(0);
+
+		// Trocar os buffers da janela
+		glfwSwapBuffers(window);
 
 		glLineWidth(10);
 		glPointSize(20);
@@ -409,24 +418,24 @@ GLuint createTriangle(float x0, float y0, float x1, float y1, float x2, float y2
 	return VAO;
 }
 
-void createBuffersForTriangle(TriangleVertices &tri) {
-    float vertices[] = {
-        tri.v0.x, tri.v0.y, tri.v0.z,
-        tri.v1.x, tri.v1.y, tri.v1.z,
-        tri.v2.x, tri.v2.y, tri.v2.z
-    };
-    glGenVertexArrays(1, &tri.VAO);
-    glGenBuffers(1, &tri.VBO);
+void createBuffersForTriangle(TriangleVertices &tri)
+{
+	float vertices[] = {
+		tri.v0.x, tri.v0.y, tri.v0.z,
+		tri.v1.x, tri.v1.y, tri.v1.z,
+		tri.v2.x, tri.v2.y, tri.v2.z};
+	glGenVertexArrays(1, &tri.VAO);
+	glGenBuffers(1, &tri.VBO);
 
-    glBindVertexArray(tri.VAO);
-    glBindBuffer(GL_ARRAY_BUFFER, tri.VBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+	glBindVertexArray(tri.VAO);
+	glBindBuffer(GL_ARRAY_BUFFER, tri.VBO);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void *)0);
+	glEnableVertexAttribArray(0);
 
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
-    glBindVertexArray(0);
+	glBindBuffer(GL_ARRAY_BUFFER, 0);
+	glBindVertexArray(0);
 }
 
 void mouse_button_callback(GLFWwindow *window, int button, int action, int mods)
@@ -435,7 +444,8 @@ void mouse_button_callback(GLFWwindow *window, int button, int action, int mods)
 	{
 		double xpos, ypos;
 		glfwGetCursorPos(window, &xpos, &ypos);
-		tempVertices.push_back(vec3(xpos, ypos, 0.0f));
+		vec3 vertex = vec3((float)xpos, (float)ypos, 0.0f);
+		tempVertices.push_back(vertex);
 
 		if (tempVertices.size() == 3)
 		{
@@ -445,7 +455,8 @@ void mouse_button_callback(GLFWwindow *window, int button, int action, int mods)
 			tri.v2 = tempVertices[2];
 			tri.color = colors[iColor];
 			iColor = (iColor + 1) % colors.size();
-			        createBuffersForTriangle(tri);
+
+			createBuffersForTriangle(tri);
 
 			triangles.push_back(tri);
 			tempVertices.clear();
