@@ -1,3 +1,6 @@
+#include <iostream>
+using namespace std;
+
 class TileMap {
     float z;               // caso de eventual de vários tilemaps sobrepostos
     unsigned int tid;      // indicação do tileset utilizado
