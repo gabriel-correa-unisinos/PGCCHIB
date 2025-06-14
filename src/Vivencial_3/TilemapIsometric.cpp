@@ -103,8 +103,8 @@ const GLchar *fragmentShaderSource = R"(
 
 int tileWidth = 128.0f;
 int tileHeight = 64.0f;
-int playerI = 1; // Posição inicial na linha
-int playerJ = 1; // Posição inicial na coluna
+int mapWidth = 3;
+int mapHeight = 3;
 
 float vertices[] = {
     //     X,       Y,     U,     V
@@ -379,14 +379,26 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
     }
     else if (action == GLFW_PRESS || action == GLFW_REPEAT)
     {
+        // Movimentos propostos
+        int nextX = (int)playerMapX;
+        int nextY = (int)playerMapY;
+
         if (key == GLFW_KEY_UP)
-            playerMapY -= 1;
+            nextY -= 1; 
         if (key == GLFW_KEY_DOWN)
-            playerMapY += 1;
+            nextY += 1;
         if (key == GLFW_KEY_LEFT)
-            playerMapX -= 1;
+            nextX -= 1;
         if (key == GLFW_KEY_RIGHT)
-            playerMapX += 1;
+            nextX += 1;
+
+        // Verifica se está dentro do mapa
+        if (nextX >= 0 && nextX < mapWidth &&
+            nextY >= 0 && nextY < mapHeight)
+        {
+            playerMapX = nextX;
+            playerMapY = nextY;
+        }
     }
 }
 
