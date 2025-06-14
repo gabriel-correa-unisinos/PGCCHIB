@@ -47,9 +47,6 @@ using namespace std;
 
 using namespace glm;
 
-const int MAP_WIDTH = 10;
-const int MAP_HEIGHT = 10;
-
 struct Sprite
 {
     GLuint VAO;
@@ -106,19 +103,25 @@ const GLchar *fragmentShaderSource = R"(
 
 int tileWidth = 128.0f;
 int tileHeight = 64.0f;
+int playerI = 1; // Posição inicial na linha
+int playerJ = 1; // Posição inicial na coluna
+
 
 float vertices[] = {
-    //   X,    Y,   U,   V
-    0.0f, 32.0f, 0.5f, 1.0f,  // Top
-    64.0f, 0.0f, 1.0f, 0.5f,  // Right
-    0.0f, -32.0f, 0.5f, 0.0f, // Bottom
-    -64.0f, 0.0f, 0.0f, 0.5f  // Left
+    //     X,       Y,     U,     V
+     0.0f,  tileHeight / 2.0f, 0.5f, 1.0f,  // Top
+     tileWidth / 2.0f, 0.0f,   1.0f, 0.5f,  // Right
+     0.0f, -tileHeight / 2.0f, 0.5f, 0.0f,  // Bottom
+    -tileWidth / 2.0f, 0.0f,   0.0f, 0.5f   // Left
 };
 
+
 int map[3][3] = {
-    {1, 1, 4},
-    {4, 1, 4},
-    {4, 4, 1}};
+    {0, 1, 2},
+    {1, 2, 3},
+    {2, 3, 4}
+};
+
 
 // Função MAIN
 int main()
@@ -202,11 +205,6 @@ int main()
     glEnable(GL_BLEND);                                // Habilita a transparência -- canal alpha
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // Seta função de transparência
 
-    double lastTime = 0.0;
-    double deltaT = 0.0;
-    double currTime = glfwGetTime();
-    double FPS = 12.0;
-
     GLuint tilesetTexture;
     glGenTextures(1, &tilesetTexture);
     glBindTexture(GL_TEXTURE_2D, tilesetTexture);
@@ -248,8 +246,8 @@ int main()
 
         // texWidth deve ser 128 * 7 = 896 se os tiles forem 128x64
 
-        int tileWidth = 128;
-        int tileHeight = 64;
+        int tileWidth = 114;
+        int tileHeight = 57;
 
         int mapWidth = 3;
         int mapHeight = 3;
@@ -265,12 +263,30 @@ int main()
                 glBindBuffer(GL_ARRAY_BUFFER, VBO);
                 glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices);
 
-                float screenX = calculateDrawingPositionX(i, j, tileWidth, tileHeight);
-                float screenY = calculateDrawingPositionY(i, j, tileWidth, tileHeight);
+                // float screenX = calculateDrawingPositionX(i, j, tileWidth, tileHeight);
+                // float screenY = calculateDrawingPositionY(i, j, tileWidth, tileHeight);
                 //float screenX = (i - j) * (tileWidth / 2.0f);
                 //float screenY = (i + j) * (tileHeight / 2.0f);
 
-                mat4 model = translate(mat4(1.0f), vec3(400.0f + screenX, 100.0f + screenY, 0.0f));
+                // Tamanho total do mapa em pixels
+                float mapPixelWidth = (mapWidth + mapHeight) * tileWidth / 2.0f;
+                float mapPixelHeight = (mapWidth + mapHeight) * tileHeight / 2.0f;
+
+                // Centro da tela
+                float centerX = width / 2.0f;
+                float centerY = height / 2.0f;
+
+                // Coordenadas isométricas clássicas
+                float screenX = (j - i) * (tileWidth / 2.0f);
+                float screenY = (i + j) * (tileHeight / 2.0f);
+
+                // Deslocamento para centralizar o tilemap
+                float offsetX = centerX - (mapPixelWidth / 2.0f);
+                float offsetY = centerY - (mapPixelHeight / 2.0f);
+
+                // Aplicação do modelo
+                mat4 model = translate(mat4(1.0f), vec3(offsetX + screenX, offsetY + screenY, 0.0f));
+
                 glUniformMatrix4fv(glGetUniformLocation(shaderID, "model"), 1, GL_FALSE, value_ptr(model));
 
                 glBindTexture(GL_TEXTURE_2D, tilesetTexture);
@@ -294,8 +310,42 @@ int main()
 // ou solta via GLFW
 void key_callback(GLFWwindow *window, int key, int scancode, int action, int mode)
 {
-    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
+    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS){
         glfwSetWindowShouldClose(window, GL_TRUE);
+    }else if (action == GLFW_PRESS)
+    {
+        switch (key)
+        {
+        case GLFW_KEY_W: // Norte
+            playerI -= 1;
+            break;
+        case GLFW_KEY_S: // Sul
+            playerI += 1;
+            break;
+        case GLFW_KEY_A: // Oeste
+            playerJ -= 1;
+            break;
+        case GLFW_KEY_D: // Leste
+            playerJ += 1;
+            break;
+        case GLFW_KEY_Q: // Noroeste
+            playerI -= 1;
+            playerJ -= 1;
+            break;
+        case GLFW_KEY_E: // Nordeste
+            playerI -= 1;
+            playerJ += 1;
+            break;
+        case GLFW_KEY_Z: // Sudoeste
+            playerI += 1;
+            playerJ -= 1;
+            break;
+        case GLFW_KEY_C: // Sudeste
+            playerI += 1;
+            playerJ += 1;
+            break;
+        }
+    }
 }
 
 // Esta função está bastante hardcoded - objetivo é compilar e "buildar" um programa de
@@ -456,14 +506,14 @@ int loadTexture(string filePath, int &width, int &height)
 int calculateDrawingPositionX(int col, int row, float tw, float th)
 {
     float x = (col * tw / 2) + (row * th / 2);
-    //float y = (col * th / 2) - (row * th / 2);
+    // float y = (col * th / 2) - (row * th / 2);
 
     return x;
 }
 
 int calculateDrawingPositionY(int col, int row, float tw, float th)
 {
-    //float x = (col * tw / 2) + (row * th / 2);
+    // float x = (col * tw / 2) + (row * th / 2);
     float y = (col * th / 2) - (row * th / 2);
 
     return y;
@@ -472,16 +522,25 @@ int calculateDrawingPositionY(int col, int row, float tw, float th)
 void updateTileUV(int tileIndex, int tileWidth, int tileHeight, int tilesetWidth, int tilesetHeight, float *vertices)
 {
     float u = (tileIndex * tileWidth) / (float)tilesetWidth;
-    float uWidth = tileWidth / (float)tilesetWidth;
     float v = 0.0f;
+    float uWidth = tileWidth / (float)tilesetWidth;
     float vHeight = tileHeight / (float)tilesetHeight;
 
-    vertices[2] = u + uWidth / 2.0f;
-    vertices[3] = v + vHeight; // Top
-    vertices[6] = u + uWidth;
-    vertices[7] = v + vHeight / 2; // Right
+    // Top
+    vertices[2]  = u + uWidth / 2.0f;
+    vertices[3]  = v + vHeight;
+
+    // Right
+    vertices[6]  = u + uWidth;
+    vertices[7]  = v + vHeight / 2.0f;
+
+    // Bottom
     vertices[10] = u + uWidth / 2.0f;
-    vertices[11] = v; // Bottom
+    vertices[11] = v;
+
+    // Left
     vertices[14] = u;
-    vertices[15] = v + vHeight / 2; // Left
+    vertices[15] = v + vHeight / 2.0f;
 }
+
+
