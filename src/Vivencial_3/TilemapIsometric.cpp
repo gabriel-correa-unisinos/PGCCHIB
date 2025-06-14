@@ -106,22 +106,31 @@ int tileHeight = 64.0f;
 int playerI = 1; // Posição inicial na linha
 int playerJ = 1; // Posição inicial na coluna
 
-
 float vertices[] = {
     //     X,       Y,     U,     V
-     0.0f,  tileHeight / 2.0f, 0.5f, 1.0f,  // Top
-     tileWidth / 2.0f, 0.0f,   1.0f, 0.5f,  // Right
-     0.0f, -tileHeight / 2.0f, 0.5f, 0.0f,  // Bottom
-    -tileWidth / 2.0f, 0.0f,   0.0f, 0.5f   // Left
+    0.0f, tileHeight / 2.0f, 0.5f, 1.0f,  // Top
+    tileWidth / 2.0f, 0.0f, 1.0f, 0.5f,   // Right
+    0.0f, -tileHeight / 2.0f, 0.5f, 0.0f, // Bottom
+    -tileWidth / 2.0f, 0.0f, 0.0f, 0.5f   // Left
 };
 
+float playerWidth = 32.0f;
+float playerHeight = 48.0f;
+float playerMapX = 1.0f;
+float playerMapY = 1.0f;
+
+float playerVertices[] = {
+    //    X,     Y,    U,   V
+    -playerWidth / 2.0f, playerHeight / 2.0f, 0.0f, 1.0f, // Top-left
+    playerWidth / 2.0f, playerHeight / 2.0f, 1.0f, 1.0f,  // Top-right
+    playerWidth / 2.0f, -playerHeight / 2.0f, 1.0f, 0.0f, // Bottom-right
+    -playerWidth / 2.0f, -playerHeight / 2.0f, 0.0f, 0.0f // Bottom-left
+};
 
 int map[3][3] = {
     {0, 1, 2},
     {1, 2, 3},
-    {2, 3, 4}
-};
-
+    {2, 3, 4}};
 
 // Função MAIN
 int main()
@@ -182,6 +191,25 @@ int main()
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 
+    GLuint playerVAO, playerVBO;
+    glGenVertexArrays(1, &playerVAO);
+    glGenBuffers(1, &playerVBO);
+
+    glBindVertexArray(playerVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, playerVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(playerVertices), playerVertices, GL_STATIC_DRAW);
+
+    // Posição
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void *)0);
+    glEnableVertexAttribArray(0);
+
+    // UV
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void *)(2 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
     glUseProgram(shaderID); // Reseta o estado do shader para evitar problemas futuros
 
     double prev_s = glfwGetTime();  // Define o "tempo anterior" inicial.
@@ -229,7 +257,28 @@ int main()
     }
     stbi_image_free(data);
 
-    vec2 offsetTexBg = vec2(0.0, 0.0);
+    GLuint playerTexture;
+    glGenTextures(1, &playerTexture);
+    glBindTexture(GL_TEXTURE_2D, playerTexture);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    int pWidth, pHeight, pChannels;
+    unsigned char *pdata = stbi_load("../assets/sprites/microbio.png", &pWidth, &pHeight, &pChannels, STBI_rgb_alpha);
+    if (pdata)
+    {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, pWidth, pHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, pdata);
+        glGenerateMipmap(GL_TEXTURE_2D);
+    }
+    else
+    {
+        std::cerr << "Falha ao carregar sprite do jogador." << std::endl;
+    }
+    stbi_image_free(pdata);
+
     // Loop da aplicação - "game loop"
     while (!glfwWindowShouldClose(window))
     {
@@ -265,8 +314,8 @@ int main()
 
                 // float screenX = calculateDrawingPositionX(i, j, tileWidth, tileHeight);
                 // float screenY = calculateDrawingPositionY(i, j, tileWidth, tileHeight);
-                //float screenX = (i - j) * (tileWidth / 2.0f);
-                //float screenY = (i + j) * (tileHeight / 2.0f);
+                // float screenX = (i - j) * (tileWidth / 2.0f);
+                // float screenY = (i + j) * (tileHeight / 2.0f);
 
                 // Tamanho total do mapa em pixels
                 float mapPixelWidth = (mapWidth + mapHeight) * tileWidth / 2.0f;
@@ -292,6 +341,20 @@ int main()
                 glBindTexture(GL_TEXTURE_2D, tilesetTexture);
                 glBindVertexArray(VAO);
                 glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+                float playerScreenX = (playerMapX - playerMapY) * (tileWidth / 2.0f);
+                float playerScreenY = (playerMapX + playerMapY) * (tileHeight / 2.0f);
+
+                // Reuso de offset do mapa
+                float playerOffSetX = width / 2.0f - ((mapWidth + mapHeight) * tileWidth / 2.0f) / 2.0f;
+                float playerOffSetY = height / 2.0f - ((mapWidth + mapHeight) * tileHeight / 2.0f) / 2.0f;
+
+                mat4 modelPlayer = translate(mat4(1.0f), vec3(playerOffSetX + playerScreenX, playerOffSetY + playerScreenY + 5.0f, 0.1f));
+                glUniformMatrix4fv(glGetUniformLocation(shaderID, "model"), 1, GL_FALSE, value_ptr(modelPlayer));
+
+                glBindTexture(GL_TEXTURE_2D, playerTexture);
+                glBindVertexArray(playerVAO);
+                glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
             }
         }
 
@@ -310,41 +373,20 @@ int main()
 // ou solta via GLFW
 void key_callback(GLFWwindow *window, int key, int scancode, int action, int mode)
 {
-    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS){
-        glfwSetWindowShouldClose(window, GL_TRUE);
-    }else if (action == GLFW_PRESS)
+    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
     {
-        switch (key)
-        {
-        case GLFW_KEY_W: // Norte
-            playerI -= 1;
-            break;
-        case GLFW_KEY_S: // Sul
-            playerI += 1;
-            break;
-        case GLFW_KEY_A: // Oeste
-            playerJ -= 1;
-            break;
-        case GLFW_KEY_D: // Leste
-            playerJ += 1;
-            break;
-        case GLFW_KEY_Q: // Noroeste
-            playerI -= 1;
-            playerJ -= 1;
-            break;
-        case GLFW_KEY_E: // Nordeste
-            playerI -= 1;
-            playerJ += 1;
-            break;
-        case GLFW_KEY_Z: // Sudoeste
-            playerI += 1;
-            playerJ -= 1;
-            break;
-        case GLFW_KEY_C: // Sudeste
-            playerI += 1;
-            playerJ += 1;
-            break;
-        }
+        glfwSetWindowShouldClose(window, GL_TRUE);
+    }
+    else if (action == GLFW_PRESS || action == GLFW_REPEAT)
+    {
+        if (key == GLFW_KEY_UP)
+            playerMapY -= 1;
+        if (key == GLFW_KEY_DOWN)
+            playerMapY += 1;
+        if (key == GLFW_KEY_LEFT)
+            playerMapX -= 1;
+        if (key == GLFW_KEY_RIGHT)
+            playerMapX += 1;
     }
 }
 
@@ -527,12 +569,12 @@ void updateTileUV(int tileIndex, int tileWidth, int tileHeight, int tilesetWidth
     float vHeight = tileHeight / (float)tilesetHeight;
 
     // Top
-    vertices[2]  = u + uWidth / 2.0f;
-    vertices[3]  = v + vHeight;
+    vertices[2] = u + uWidth / 2.0f;
+    vertices[3] = v + vHeight;
 
     // Right
-    vertices[6]  = u + uWidth;
-    vertices[7]  = v + vHeight / 2.0f;
+    vertices[6] = u + uWidth;
+    vertices[7] = v + vHeight / 2.0f;
 
     // Bottom
     vertices[10] = u + uWidth / 2.0f;
@@ -542,5 +584,3 @@ void updateTileUV(int tileIndex, int tileWidth, int tileHeight, int tilesetWidth
     vertices[14] = u;
     vertices[15] = v + vHeight / 2.0f;
 }
-
-
