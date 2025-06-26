@@ -1,0 +1,616 @@
+/*
+ * Hello Triangle - Código adaptado de:
+ *   - https://learnopengl.com/#!Getting-started/Hello-Triangle
+ *   - https://antongerdelan.net/opengl/glcontext2.html
+ *
+ * Adaptado por: Rossana Baptista Queiroz
+ *
+ * Disciplinas:
+ *   - Processamento Gráfico (Ciência da Computação - Híbrido)
+ *   - Processamento Gráfico: Fundamentos (Ciência da Computação - Presencial)
+ *   - Fundamentos de Computação Gráfica (Jogos Digitais)
+ *
+ * Descrição:
+ *   Este código é o "Olá Mundo" da Computação Gráfica, utilizando OpenGL Moderna.
+ *   No pipeline programável, o desenvolvedor pode implementar as etapas de
+ *   Processamento de Geometria e Processamento de Pixel utilizando shaders.
+ *   Um programa de shader precisa ter, obrigatoriamente, um Vertex Shader e um Fragment Shader,
+ *   enquanto outros shaders, como o de geometria, são opcionais.
+ *
+ * Histórico:
+ *   - Versão inicial: 07/04/2017
+ *   - Última atualização: 18/03/2025
+ *
+ */
+
+#include <iostream>
+#include <string>
+#include <assert.h>
+#include <cmath>
+
+using namespace std;
+
+// GLAD
+#include <glad/glad.h>
+
+// GLFW
+#include <GLFW/glfw3.h>
+
+// STB_IMAGE
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
+// GLM
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
+
+using namespace glm;
+
+struct Sprite
+{
+    GLuint VAO;
+    GLuint texID;
+    vec3 position;
+    vec3 dimensions; // tamanho do frame
+    float ds, dt;
+    int iAnimation, iFrame;
+    int nAnimations, nFrames;
+};
+
+// Protótipo da função de callback de teclado
+void key_callback(GLFWwindow *window, int key, int scancode, int action, int mode);
+
+// Protótipos das funções
+int setupShader();
+int setupSprite(int nAnimations, int nFrames, float &ds, float &dt);
+int loadTexture(string filePath, int &width, int &height);
+int calculateDrawingPositionX(int col, int row, float tw, float th);
+int calculateDrawingPositionY(int col, int row, float tw, float th);
+void updateTileUV(int tileIndex, int tileWidth, int tileHeight, int tilesetWidth, int tilesetHeight, float *vertices);
+
+// Dimensões da janela (pode ser alterado em tempo de execução)
+const GLuint WIDTH = 800, HEIGHT = 600;
+
+// Código fonte do Vertex Shader (em GLSL): ainda hardcoded
+const GLchar *vertexShaderSource = R"(
+ #version 400
+ layout (location = 0) in vec3 position;
+ layout (location = 1) in vec2 texc;
+ out vec2 tex_coord;
+ uniform mat4 model;
+ uniform mat4 projection;
+ void main()
+ {
+	tex_coord = vec2(texc.s, 1.0 - texc.t);
+	gl_Position = projection * model * vec4(position, 1.0);
+ }
+ )";
+
+// Código fonte do Fragment Shader (em GLSL): ainda hardcoded
+const GLchar *fragmentShaderSource = R"(
+ #version 400
+ in vec2 tex_coord;
+ out vec4 color;
+ uniform sampler2D tex_buff;
+ uniform vec2 offsetTex;
+
+ void main()
+ {
+	 color = texture(tex_buff,tex_coord + offsetTex);
+ }
+ )";
+
+int tileWidth = 128.0f;
+int tileHeight = 64.0f;
+int mapWidth = 3;
+int mapHeight = 3;
+
+float vertices[] = {
+    //     X,       Y,     U,     V
+    0.0f, tileHeight / 2.0f, 0.5f, 1.0f,  // Top
+    tileWidth / 2.0f, 0.0f, 1.0f, 0.5f,   // Right
+    0.0f, -tileHeight / 2.0f, 0.5f, 0.0f, // Bottom
+    -tileWidth / 2.0f, 0.0f, 0.0f, 0.5f   // Left
+};
+
+float playerWidth = 32.0f;
+float playerHeight = 48.0f;
+float playerMapX = 1.0f;
+float playerMapY = 1.0f;
+bool isAlive = true;
+
+float playerVertices[] = {
+    //    X,     Y,    U,   V
+    -playerWidth / 2.0f, playerHeight / 2.0f, 0.0f, 1.0f, // Top-left
+    playerWidth / 2.0f, playerHeight / 2.0f, 1.0f, 1.0f,  // Top-right
+    playerWidth / 2.0f, -playerHeight / 2.0f, 1.0f, 0.0f, // Bottom-right
+    -playerWidth / 2.0f, -playerHeight / 2.0f, 0.0f, 0.0f // Bottom-left
+};
+
+int map[3][3] = {
+    {0, 1, 2},
+    {1, 2, 4},
+    {2, 3, 3}};
+
+std::unordered_map<int, bool> walkableTiles = {
+    {0, true},  // areia
+    {1, true},  // grama
+    {2, true},  // pedra
+    {3, false}, // lava
+    {4, false}  // agua
+};
+
+bool itemMap[3][3] = {
+    {false, false, true},
+    {false, false, false},
+    {true, false, false}
+};
+
+// Função MAIN
+int main()
+{
+    // Inicialização da GLFW
+    glfwInit();
+
+    glfwWindowHint(GLFW_SAMPLES, 8);
+
+    GLFWwindow *window = glfwCreateWindow(WIDTH, HEIGHT, "Atividade Vivencial 3", nullptr, nullptr);
+    if (!window)
+    {
+        std::cerr << "Falha ao criar a janela GLFW" << std::endl;
+        glfwTerminate();
+        return -1;
+    }
+    glfwMakeContextCurrent(window);
+
+    // Fazendo o registro da função de callback para a janela GLFW
+    glfwSetKeyCallback(window, key_callback);
+
+    // GLAD: carrega todos os ponteiros d funções da OpenGL
+    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
+    {
+        std::cerr << "Falha ao inicializar GLAD" << std::endl;
+        return -1;
+    }
+
+    // Obtendo as informações de versão
+    const GLubyte *renderer = glGetString(GL_RENDERER); /* get renderer string */
+    const GLubyte *version = glGetString(GL_VERSION);   /* version as a string */
+    cout << "Renderer: " << renderer << endl;
+    cout << "OpenGL version supported " << version << endl;
+
+    // Definindo as dimensões da viewport com as mesmas dimensões da janela da aplicação
+    int width, height;
+    glfwGetFramebufferSize(window, &width, &height);
+    glViewport(0, 0, width, height);
+
+    // Compilando e buildando o programa de shader
+    GLuint shaderID = setupShader();
+    GLuint VBO, VAO;
+    glGenVertexArrays(1, &VAO);
+    glGenBuffers(1, &VBO);
+
+    glBindVertexArray(VAO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+    // Posição
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void *)0);
+    glEnableVertexAttribArray(0);
+
+    // Coordenadas de textura
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void *)(2 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
+    GLuint playerVAO, playerVBO;
+    glGenVertexArrays(1, &playerVAO);
+    glGenBuffers(1, &playerVBO);
+
+    glBindVertexArray(playerVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, playerVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(playerVertices), playerVertices, GL_STATIC_DRAW);
+
+    // Posição
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void *)0);
+    glEnableVertexAttribArray(0);
+
+    // UV
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void *)(2 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
+    glUseProgram(shaderID); // Reseta o estado do shader para evitar problemas futuros
+
+    double prev_s = glfwGetTime();  // Define o "tempo anterior" inicial.
+    double title_countdown_s = 0.1; // Intervalo para atualizar o título da janela com o FPS.
+
+    float colorValue = 0.0;
+
+    // Ativando o primeiro buffer de textura do OpenGL
+    glActiveTexture(GL_TEXTURE0);
+
+    // Criando a variável uniform pra mandar a textura pro shader
+    glUniform1i(glGetUniformLocation(shaderID, "tex_buff"), 0);
+
+    // Matriz de projeção paralela ortográfica
+    mat4 projection = ortho(0.0, 800.0, 0.0, 600.0, -1.0, 1.0);
+    glUniformMatrix4fv(glGetUniformLocation(shaderID, "projection"), 1, GL_FALSE, value_ptr(projection));
+
+    glEnable(GL_DEPTH_TEST); // Habilita o teste de profundidade
+    glDepthFunc(GL_ALWAYS);  // Testa a cada ciclo
+
+    glEnable(GL_BLEND);                                // Habilita a transparência -- canal alpha
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // Seta função de transparência
+
+    GLuint tilesetTexture;
+    glGenTextures(1, &tilesetTexture);
+    glBindTexture(GL_TEXTURE_2D, tilesetTexture);
+
+    // Parâmetros da textura
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    // Carregamento
+    int texWidth, texHeight, nrChannels;
+    unsigned char *data = stbi_load("../assets/tilesets/tilesetIso.png", &texWidth, &texHeight, &nrChannels, STBI_rgb_alpha);
+    if (data)
+    {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texWidth, texHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+        glGenerateMipmap(GL_TEXTURE_2D);
+    }
+    else
+    {
+        std::cerr << "Falha ao carregar o tileset." << std::endl;
+    }
+    stbi_image_free(data);
+
+    GLuint playerTexture;
+    glGenTextures(1, &playerTexture);
+    glBindTexture(GL_TEXTURE_2D, playerTexture);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    int pWidth, pHeight, pChannels;
+    unsigned char *pdata = stbi_load("../assets/sprites/microbio.png", &pWidth, &pHeight, &pChannels, STBI_rgb_alpha);
+    if (pdata)
+    {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, pWidth, pHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, pdata);
+        glGenerateMipmap(GL_TEXTURE_2D);
+    }
+    else
+    {
+        std::cerr << "Falha ao carregar sprite do jogador." << std::endl;
+    }
+    stbi_image_free(pdata);
+
+    // Loop da aplicação - "game loop"
+    while (!glfwWindowShouldClose(window))
+    {
+
+        // Checa se houveram eventos de input (key pressed, mouse moved etc.) e chama as funções de callback correspondentes
+        glfwPollEvents();
+
+        // Limpa o buffer de cor
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f); // cor de fundo
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        glLineWidth(10);
+        glPointSize(20);
+
+        // texWidth deve ser 128 * 7 = 896 se os tiles forem 128x64
+
+        int tileWidth = 114;
+        int tileHeight = 57;
+
+        int mapWidth = 3;
+        int mapHeight = 3;
+
+        for (int i = 0; i < mapHeight; ++i)
+        {
+            for (int j = 0; j < mapWidth; ++j)
+            {
+                int tileIndex = map[i][j];
+
+                updateTileUV(tileIndex, tileWidth, tileHeight, texWidth, texHeight, vertices);
+
+                glBindBuffer(GL_ARRAY_BUFFER, VBO);
+                glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(vertices), vertices);
+
+                // Tamanho total do mapa em pixels
+                float mapPixelWidth = (mapWidth + mapHeight) * tileWidth / 2.0f;
+                float mapPixelHeight = (mapWidth + mapHeight) * tileHeight / 2.0f;
+
+                // Centro da tela
+                float centerX = width / 2.0f;
+                float centerY = height / 2.0f;
+
+                // Coordenadas isométricas clássicas
+                float screenX = (j - i) * (tileWidth / 2.0f);
+                float screenY = (i + j) * (tileHeight / 2.0f);
+
+                // Deslocamento para centralizar o tilemap
+                float offsetX = centerX - (mapPixelWidth / 2.0f);
+                float offsetY = centerY - (mapPixelHeight / 2.0f);
+
+                // Aplicação do modelo
+                mat4 model = translate(mat4(1.0f), vec3(offsetX + screenX, offsetY + screenY, 0.0f));
+
+                glUniformMatrix4fv(glGetUniformLocation(shaderID, "model"), 1, GL_FALSE, value_ptr(model));
+
+                glBindTexture(GL_TEXTURE_2D, tilesetTexture);
+                glBindVertexArray(VAO);
+                glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+                float playerScreenX = (playerMapX - playerMapY) * (tileWidth / 2.0f);
+                float playerScreenY = (playerMapX + playerMapY) * (tileHeight / 2.0f);
+
+                // Reuso de offset do mapa
+                float playerOffSetX = width / 2.0f - ((mapWidth + mapHeight) * tileWidth / 2.0f) / 2.0f;
+                float playerOffSetY = height / 2.0f - ((mapWidth + mapHeight) * tileHeight / 2.0f) / 2.0f;
+
+                mat4 modelPlayer = translate(mat4(1.0f), vec3(playerOffSetX + playerScreenX, playerOffSetY + playerScreenY + 5.0f, 0.1f));
+                glUniformMatrix4fv(glGetUniformLocation(shaderID, "model"), 1, GL_FALSE, value_ptr(modelPlayer));
+
+                glBindTexture(GL_TEXTURE_2D, playerTexture);
+                glBindVertexArray(playerVAO);
+                glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+            }
+        }
+
+        //---------------------------------------------------------------------------
+
+        // Troca os buffers da tela
+        glfwSwapBuffers(window);
+    }
+
+    glfwTerminate();
+    return 0;
+}
+
+// Função de callback de teclado - só pode ter uma instância (deve ser estática se
+// estiver dentro de uma classe) - É chamada sempre que uma tecla for pressionada
+// ou solta via GLFW
+void key_callback(GLFWwindow *window, int key, int scancode, int action, int mode)
+{
+    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
+    {
+        glfwSetWindowShouldClose(window, GL_TRUE);
+    }
+    else if (action == GLFW_PRESS || action == GLFW_REPEAT)
+    {
+        // Movimentos propostos
+        int nextX = (int)playerMapX;
+        int nextY = (int)playerMapY;
+
+        if (key == GLFW_KEY_UP)
+            nextY -= 1;
+        if (key == GLFW_KEY_DOWN)
+            nextY += 1;
+        if (key == GLFW_KEY_LEFT)
+            nextX -= 1;
+        if (key == GLFW_KEY_RIGHT)
+            nextX += 1;
+
+        // Verifica se está dentro do mapa
+        if (nextX >= 0 && nextX < mapWidth &&
+            nextY >= 0 && nextY < mapHeight)
+        {
+            int tileIndex = map[nextY][nextX]; // Atenção: Y é a linha
+
+            // Verifica se o tile de destino é caminhável
+            if (walkableTiles[tileIndex])
+            {
+                playerMapX = nextX;
+                playerMapY = nextY;
+                itemMap[nextY][nextX] = false; // Remove a moeda
+                std::cout << "Moeda coletada!\n";
+            }
+        }
+    }
+}
+
+// Esta função está bastante hardcoded - objetivo é compilar e "buildar" um programa de
+//  shader simples e único neste exemplo de código
+//  O código fonte do vertex e fragment shader está nos arrays vertexShaderSource e
+//  fragmentShader source no iniçio deste arquivo
+//  A função retorna o identificador do programa de shader
+int setupShader()
+{
+    // Vertex shader
+    GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
+    glCompileShader(vertexShader);
+    // Checando erros de compilação (exibição via log no terminal)
+    GLint success;
+    GLchar infoLog[512];
+    glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &success);
+    if (!success)
+    {
+        glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
+        std::cout << "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n"
+                  << infoLog << std::endl;
+    }
+    // Fragment shader
+    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
+    glCompileShader(fragmentShader);
+    // Checando erros de compilação (exibição via log no terminal)
+    glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &success);
+    if (!success)
+    {
+        glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
+        std::cout << "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n"
+                  << infoLog << std::endl;
+    }
+    // Linkando os shaders e criando o identificador do programa de shader
+    GLuint shaderProgram = glCreateProgram();
+    glAttachShader(shaderProgram, vertexShader);
+    glAttachShader(shaderProgram, fragmentShader);
+    glLinkProgram(shaderProgram);
+    // Checando por erros de linkagem
+    glGetProgramiv(shaderProgram, GL_LINK_STATUS, &success);
+    if (!success)
+    {
+        glGetProgramInfoLog(shaderProgram, 512, NULL, infoLog);
+        std::cout << "ERROR::SHADER::PROGRAM::LINKING_FAILED\n"
+                  << infoLog << std::endl;
+    }
+    glDeleteShader(vertexShader);
+    glDeleteShader(fragmentShader);
+
+    return shaderProgram;
+}
+
+// Esta função está bastante harcoded - objetivo é criar os buffers que armazenam a
+// geometria de um triângulo
+// Apenas atributo coordenada nos vértices
+// 1 VBO com as coordenadas, VAO com apenas 1 ponteiro para atributo
+// A função retorna o identificador do VAO
+int setupSprite(int nAnimations, int nFrames, float &ds, float &dt)
+{
+
+    ds = 1.0 / (float)nFrames;
+    dt = 1.0 / (float)nAnimations;
+    // Aqui setamos as coordenadas x, y e z do triângulo e as armazenamos de forma
+    // sequencial, já visando mandar para o VBO (Vertex Buffer Objects)
+    // Cada atributo do vértice (coordenada, cores, coordenadas de textura, normal, etc)
+    // Pode ser arazenado em um VBO único ou em VBOs separados
+    GLfloat vertices[] = {
+        // x   y    z    s     t
+        -0.5, 0.5, 0.0, 0.0, dt,   // V0
+        -0.5, -0.5, 0.0, 0.0, 0.0, // V1
+        0.5, 0.5, 0.0, ds, dt,     // V2
+        0.5, -0.5, 0.0, ds, 0.0    // V3
+    };
+
+    GLuint VBO, VAO;
+    // Geração do identificador do VBO
+    glGenBuffers(1, &VBO);
+    // Faz a conexão (vincula) do buffer como um buffer de array
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    // Envia os dados do array de floats para o buffer da OpenGl
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+    // Geração do identificador do VAO (Vertex Array Object)
+    glGenVertexArrays(1, &VAO);
+    // Vincula (bind) o VAO primeiro, e em seguida  conecta e seta o(s) buffer(s) de vértices
+    // e os ponteiros para os atributos
+    glBindVertexArray(VAO);
+    // Para cada atributo do vertice, criamos um "AttribPointer" (ponteiro para o atributo), indicando:
+    //  Localização no shader * (a localização dos atributos devem ser correspondentes no layout especificado no vertex shader)
+    //  Numero de valores que o atributo tem (por ex, 3 coordenadas xyz)
+    //  Tipo do dado
+    //  Se está normalizado (entre zero e um)
+    //  Tamanho em bytes
+    //  Deslocamento a partir do byte zero
+
+    // Ponteiro pro atributo 0 - Posição - coordenadas x, y, z
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(GLfloat), (GLvoid *)0);
+    glEnableVertexAttribArray(0);
+
+    // Ponteiro pro atributo 1 - Coordenada de textura s, t
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(GLfloat), (GLvoid *)(3 * sizeof(GLfloat)));
+    glEnableVertexAttribArray(1);
+
+    // Observe que isso é permitido, a chamada para glVertexAttribPointer registrou o VBO como o objeto de buffer de vértice
+    // atualmente vinculado - para que depois possamos desvincular com segurança
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+    // Desvincula o VAO (é uma boa prática desvincular qualquer buffer ou array para evitar bugs medonhos)
+    glBindVertexArray(0);
+
+    return VAO;
+}
+
+int loadTexture(string filePath, int &width, int &height)
+{
+    GLuint texID;
+
+    // Gera o identificador da textura na memória
+    glGenTextures(1, &texID);
+    glBindTexture(GL_TEXTURE_2D, texID);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    int nrChannels;
+
+    unsigned char *data = stbi_load(filePath.c_str(), &width, &height, &nrChannels, 0);
+
+    if (data)
+    {
+        if (nrChannels == 3) // jpg, bmp
+        {
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+        }
+        else // png
+        {
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+        }
+        glGenerateMipmap(GL_TEXTURE_2D);
+    }
+    else
+    {
+        std::cout << "Failed to load texture" << std::endl;
+    }
+
+    stbi_image_free(data);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    return texID;
+}
+
+int calculateDrawingPositionX(int col, int row, float tw, float th)
+{
+    float x = (col * tw / 2) + (row * th / 2);
+    // float y = (col * th / 2) - (row * th / 2);
+
+    return x;
+}
+
+int calculateDrawingPositionY(int col, int row, float tw, float th)
+{
+    // float x = (col * tw / 2) + (row * th / 2);
+    float y = (col * th / 2) - (row * th / 2);
+
+    return y;
+}
+
+void updateTileUV(int tileIndex, int tileWidth, int tileHeight, int tilesetWidth, int tilesetHeight, float *vertices)
+{
+    float u = (tileIndex * tileWidth) / (float)tilesetWidth;
+    float v = 0.0f;
+    float uWidth = tileWidth / (float)tilesetWidth;
+    float vHeight = tileHeight / (float)tilesetHeight;
+
+    // Top
+    vertices[2] = u + uWidth / 2.0f;
+    vertices[3] = v + vHeight;
+
+    // Right
+    vertices[6] = u + uWidth;
+    vertices[7] = v + vHeight / 2.0f;
+
+    // Bottom
+    vertices[10] = u + uWidth / 2.0f;
+    vertices[11] = v;
+
+    // Left
+    vertices[14] = u;
+    vertices[15] = v + vHeight / 2.0f;
+}
