@@ -68,6 +68,7 @@ int loadTexture(string filePath, int &width, int &height);
 int calculateDrawingPositionX(int col, int row, float tw, float th);
 int calculateDrawingPositionY(int col, int row, float tw, float th);
 void updateTileUV(int tileIndex, int tileWidth, int tileHeight, int tilesetWidth, int tilesetHeight, float *vertices);
+void resetGame();
 
 // Dimensões da janela (pode ser alterado em tempo de execução)
 const GLuint WIDTH = 800, HEIGHT = 600;
@@ -94,10 +95,17 @@ const GLchar *fragmentShaderSource = R"(
  out vec4 color;
  uniform sampler2D tex_buff;
  uniform vec2 offsetTex;
+ uniform bool useHighlight;
+ uniform vec4 highlightColor;
 
  void main()
  {
 	 color = texture(tex_buff,tex_coord + offsetTex);
+     vec4 texColor = texture(tex_buff, tex_coord);
+    if (useHighlight)
+        color = highlightColor;
+    else
+        color = texColor;
  }
  )";
 
@@ -141,11 +149,19 @@ std::unordered_map<int, bool> walkableTiles = {
     {4, false}  // agua
 };
 
+const int LAVA_TILE = 3;
+bool isRespawning = false;
+float respawnYStart = -100.0f;
+float respawnDuration = 1.5f;
+double respawnStartTime = 0;
+int coinsCollected = 0;
+const int totalCoins = 3;
+bool gameWon = false;
+
 bool itemMap[3][3] = {
     {false, false, true},
-    {false, false, false},
-    {true, false, false}
-};
+    {false, true, false},
+    {true, false, false}};
 
 // Função MAIN
 int main()
@@ -292,7 +308,30 @@ int main()
     {
         std::cerr << "Falha ao carregar sprite do jogador." << std::endl;
     }
+
+    GLuint coinTexture;
+    glGenTextures(1, &coinTexture);
+    glBindTexture(GL_TEXTURE_2D, coinTexture);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    int coinWidth, coinHeight, coinChannels;
+    unsigned char *cdata = stbi_load("../assets/sprites/BronzeCoin.png", &coinWidth, &coinHeight, &coinChannels, STBI_rgb_alpha);
+    if (cdata)
+    {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, coinWidth, coinHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, cdata);
+        glGenerateMipmap(GL_TEXTURE_2D);
+    }
+    else
+    {
+        std::cerr << "Falha ao carregar sprite da moeda." << std::endl;
+    }
+
     stbi_image_free(pdata);
+    stbi_image_free(cdata);
 
     // Loop da aplicação - "game loop"
     while (!glfwWindowShouldClose(window))
@@ -352,12 +391,45 @@ int main()
                 glBindVertexArray(VAO);
                 glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
 
+                if (i == (int)playerMapY && j == (int)playerMapX)
+                {
+                    // float offsetX = width / 2.0f - ((mapWidth + mapHeight) * tileWidth / 2.0f) / 2.0f;
+                    // float offsetY = height / 2.0f - ((mapWidth + mapHeight) * tileHeight / 2.0f) / 2.0f;
+
+                    mat4 modelHighlight = translate(mat4(1.0f), vec3(offsetX + screenX, offsetY + screenY + 1.0f, 0.15f));
+                    glUniformMatrix4fv(glGetUniformLocation(shaderID, "model"), 1, GL_FALSE, value_ptr(modelHighlight));
+
+                    // Caso esteja usando shader com cor sólida:
+                    glUniform1i(glGetUniformLocation(shaderID, "useHighlight"), true);
+                    glUniform4f(glGetUniformLocation(shaderID, "highlightColor"), 1.0f, 1.0f, 0.0f, 0.3f); // amarelo transparente
+
+                    glBindVertexArray(VAO); // usa o mesmo VAO
+                    glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+                    glUniform1i(glGetUniformLocation(shaderID, "useHighlight"), false); // reset
+                }
+
                 float playerScreenX = (playerMapX - playerMapY) * (tileWidth / 2.0f);
                 float playerScreenY = (playerMapX + playerMapY) * (tileHeight / 2.0f);
 
-                // Reuso de offset do mapa
                 float playerOffSetX = width / 2.0f - ((mapWidth + mapHeight) * tileWidth / 2.0f) / 2.0f;
                 float playerOffSetY = height / 2.0f - ((mapWidth + mapHeight) * tileHeight / 2.0f) / 2.0f;
+
+                // animação de respawn
+                if (isRespawning)
+                {
+                    double t = glfwGetTime() - respawnStartTime;
+                    if (t >= respawnDuration)
+                    {
+                        isRespawning = false;
+                    }
+                    else
+                    {
+                        float progress = t / respawnDuration;
+                        float eased = 1 - pow(1 - progress, 3); // ease-out
+                        playerScreenY = respawnYStart + (playerScreenY - respawnYStart) * eased;
+                    }
+                }
 
                 mat4 modelPlayer = translate(mat4(1.0f), vec3(playerOffSetX + playerScreenX, playerOffSetY + playerScreenY + 5.0f, 0.1f));
                 glUniformMatrix4fv(glGetUniformLocation(shaderID, "model"), 1, GL_FALSE, value_ptr(modelPlayer));
@@ -365,6 +437,22 @@ int main()
                 glBindTexture(GL_TEXTURE_2D, playerTexture);
                 glBindVertexArray(playerVAO);
                 glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+                if (itemMap[i][j])
+                {
+                    float coinOffsetX = width / 2.0f - ((mapWidth + mapHeight) * tileWidth / 2.0f) / 2.0f;
+                    float coinOffsetY = height / 2.0f - ((mapWidth + mapHeight) * tileHeight / 2.0f) / 2.0f;
+
+                    mat4 modelCoin = mat4(1.0f);
+                    modelCoin = translate(modelCoin, vec3(offsetX + screenX, offsetY + screenY + 10.0f, 0.2f));
+                    modelCoin = scale(modelCoin, vec3(0.5f, 0.5f, 1.0f));
+
+                    glUniformMatrix4fv(glGetUniformLocation(shaderID, "model"), 1, GL_FALSE, value_ptr(modelCoin));
+
+                    glBindTexture(GL_TEXTURE_2D, coinTexture);
+                    glBindVertexArray(playerVAO);
+                    glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+                }
             }
         }
 
@@ -408,13 +496,30 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
         {
             int tileIndex = map[nextY][nextX]; // Atenção: Y é a linha
 
+            if (tileIndex == LAVA_TILE)
+            {
+                resetGame();
+                return; // não deixa movimentar
+            }
+
             // Verifica se o tile de destino é caminhável
             if (walkableTiles[tileIndex])
             {
                 playerMapX = nextX;
                 playerMapY = nextY;
-                itemMap[nextY][nextX] = false; // Remove a moeda
-                std::cout << "Moeda coletada!\n";
+                if (itemMap[nextY][nextX])
+                {
+                    itemMap[nextY][nextX] = false;
+                    coinsCollected++;
+                    std::cout << "Moeda coletada! Total: " << coinsCollected << "/" << totalCoins << std::endl;
+
+                    if (coinsCollected >= totalCoins)
+                    {
+                        gameWon = true;
+                        std::cout << "Você venceu o jogo! Parabéns!\n";
+                        resetGame();
+                    }
+                }
             }
         }
     }
@@ -613,4 +718,20 @@ void updateTileUV(int tileIndex, int tileWidth, int tileHeight, int tilesetWidth
     // Left
     vertices[14] = u;
     vertices[15] = v + vHeight / 2.0f;
+}
+
+void resetGame()
+{
+    playerMapX = 0;
+    playerMapY = 0;
+    coinsCollected = 0;
+    isRespawning = true;
+    respawnStartTime = glfwGetTime();
+
+    // Reinicializa as moedas
+    itemMap[0][2] = true;
+    itemMap[1][1] = true;
+    itemMap[2][0] = true;
+
+    std::cout << "Você morreu! Reiniciando o jogo...\n";
 }
