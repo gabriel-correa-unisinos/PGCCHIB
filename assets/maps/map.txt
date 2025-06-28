@@ -1,0 +1,18 @@
+# Mapa base (índices dos tiles)
+MAP
+0 1 2
+1 2 4
+2 3 3
+
+# Tiles caminháveis (índice -> 1 = sim, 0 = não)
+WALKABLE
+1 1 1 0 0
+
+# Moedas (coordenadas Y X)
+COINS
+0 2
+1 1
+2 0
+
+
+

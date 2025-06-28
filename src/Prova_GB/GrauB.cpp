@@ -27,6 +27,8 @@
 #include <string>
 #include <assert.h>
 #include <cmath>
+#include <fstream>
+#include <sstream>
 
 using namespace std;
 
@@ -69,6 +71,7 @@ int calculateDrawingPositionX(int col, int row, float tw, float th);
 int calculateDrawingPositionY(int col, int row, float tw, float th);
 void updateTileUV(int tileIndex, int tileWidth, int tileHeight, int tilesetWidth, int tilesetHeight, float *vertices);
 void resetGame();
+void loadMap(const std::string &filename);
 
 // Dimensões da janela (pode ser alterado em tempo de execução)
 const GLuint WIDTH = 800, HEIGHT = 600;
@@ -136,18 +139,9 @@ float playerVertices[] = {
     -playerWidth / 2.0f, -playerHeight / 2.0f, 0.0f, 0.0f // Bottom-left
 };
 
-int map[3][3] = {
-    {0, 1, 2},
-    {1, 2, 4},
-    {2, 3, 3}};
+int map[3][3];
 
-std::unordered_map<int, bool> walkableTiles = {
-    {0, true},  // areia
-    {1, true},  // grama
-    {2, true},  // pedra
-    {3, false}, // lava
-    {4, false}  // agua
-};
+bool walkableTiles[10] = {false};
 
 const int LAVA_TILE = 3;
 bool isRespawning = false;
@@ -158,14 +152,11 @@ int coinsCollected = 0;
 const int totalCoins = 3;
 bool gameWon = false;
 
-bool itemMap[3][3] = {
-    {false, false, true},
-    {false, true, false},
-    {true, false, false}};
-
+bool itemMap[3][3] = {false};
 // Função MAIN
 int main()
 {
+    loadMap("../assets/maps/map.txt");
     // Inicialização da GLFW
     glfwInit();
 
@@ -354,7 +345,6 @@ int main()
 
         int mapWidth = 3;
         int mapHeight = 3;
-
         for (int i = 0; i < mapHeight; ++i)
         {
             for (int j = 0; j < mapWidth; ++j)
@@ -510,6 +500,7 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
                 if (itemMap[nextY][nextX])
                 {
                     itemMap[nextY][nextX] = false;
+
                     coinsCollected++;
                     std::cout << "Moeda coletada! Total: " << coinsCollected << "/" << totalCoins << std::endl;
 
@@ -724,7 +715,6 @@ void resetGame()
 {
     playerMapX = 0;
     playerMapY = 0;
-    coinsCollected = 0;
     isRespawning = true;
     respawnStartTime = glfwGetTime();
 
@@ -732,6 +722,55 @@ void resetGame()
     itemMap[0][2] = true;
     itemMap[1][1] = true;
     itemMap[2][0] = true;
+    if (coinsCollected != 3)
+    {
+        std::cout << "Você morreu! Reiniciando o jogo...\n";
+    }
 
-    std::cout << "Você morreu! Reiniciando o jogo...\n";
+    coinsCollected = 0;
+}
+
+void loadMap(const std::string &filename)
+{
+    std::ifstream file(filename);
+    std::string line;
+    std::string section;
+
+    int row = 0;
+    while (std::getline(file, line))
+    {
+        if (line.empty() || line[0] == '#')
+            continue;
+
+        if (line == "MAP" || line == "WALKABLE" || line == "COINS")
+        {
+            section = line;
+            row = 0;
+            continue;
+        }
+
+        std::istringstream iss(line);
+
+        if (section == "MAP")
+        {
+            for (int col = 0; col < mapWidth; ++col)
+                iss >> map[row][col];
+            row++;
+        }
+        else if (section == "WALKABLE")
+        {
+            for (int i = 0; i < 5; ++i) // Ajuste para seu tileset
+            {
+                int walk;
+                iss >> walk;
+                walkableTiles[i] = (walk == 1);
+            }
+        }
+        else if (section == "COINS")
+        {
+            int y, x;
+            iss >> y >> x;
+            itemMap[y][x] = true;
+        }
+    }
 }
