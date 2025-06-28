@@ -53,12 +53,13 @@ set(EXERCISES
     HelloTriangle
     HelloTransform
     HelloTexture
-    HelloSprite
-    HelloAnimatedSprite
     Modulo2/Ex1Parte1M2
     Modulo2/Ex1Parte2M2
     Modulo2/Ex1Parte3M2
     Modulo3/M3JogoCores
+    #Modulo4/TextureObject
+    #Vivencial_3/TilemapIsometric
+    Prova_GB/GrauB
     AplicacaodeTransformacao/Ex1
     AplicacaodeTransformacao/Ex2
     AplicacaodeTransformacao/Ex3
@@ -87,13 +88,28 @@ endif()
 
 # Cria os executáveis
 foreach(EXERCISE ${EXERCISES})
-    # Extrai o nome do arquivo sem o diretório para o executável
-    get_filename_component(EXE_NAME ${EXERCISE} NAME)                                                                                                                                       
-    
-    # Adiciona o executável usando o nome do arquivo como nome do executável
-    add_executable(${EXE_NAME} src/${EXERCISE}.cpp ${GLAD_C_FILE})
+    get_filename_component(EXE_NAME ${EXERCISE} NAME)
 
-    # Configura as bibliotecas e include dirs para o executável
-    target_include_directories(${EXE_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/include/glad ${glm_SOURCE_DIR} ${stb_image_SOURCE_DIR})
+    set(SOURCE_FILES src/${EXERCISE}.cpp ${GLAD_C_FILE})
+
+    # Se for o TextureObject, adiciona arquivos extras
+    if(${EXE_NAME} STREQUAL "TextureObject")
+        list(APPEND SOURCE_FILES
+            src/Modulo4/Shader.cpp
+            src/Modulo4/Sprite.cpp
+        )
+    endif()
+
+    add_executable(${EXE_NAME} ${SOURCE_FILES})
+
+    target_include_directories(${EXE_NAME} PRIVATE
+        ${CMAKE_SOURCE_DIR}/include/glad
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/common
+        ${CMAKE_SOURCE_DIR}/common/M5-6
+        ${glm_SOURCE_DIR}
+        ${stb_image_SOURCE_DIR}
+    )
+
     target_link_libraries(${EXE_NAME} glfw ${OPENGL_LIBS} glm::glm)
 endforeach()
