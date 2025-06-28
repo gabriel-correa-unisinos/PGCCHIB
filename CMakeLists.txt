@@ -57,7 +57,7 @@ set(EXERCISES
     Modulo2/Ex1Parte2M2
     Modulo2/Ex1Parte3M2
     Modulo3/M3JogoCores
-    Modulo4/TextureObject
+    #Modulo4/TextureObject
     #Vivencial_3/TilemapIsometric
     Prova_GB/GrauB
     AplicacaodeTransformacao/Ex1
